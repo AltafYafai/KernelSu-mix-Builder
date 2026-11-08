@@ -1,0 +1,11 @@
+*.apk
+*.aab
+*.zip
+*.p12
+*.jks
+*.keystore
+dist/
+build/
+.idea/
+.vscode/
+*.env
