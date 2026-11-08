@@ -37,62 +37,87 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
       - name: Set up Android NDK
+        id: setup-ndk
         uses: nttld/setup-ndk@v1
         with:
-          ndk-version: r26b
+          ndk-version: r29
 
       - name: Set up Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,x86_64-linux-android,armv7-linux-androideabi
-
-      - name: Install Cross Compiler Tool
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cross
+          targets: aarch64-linux-android
 
       - name: Configure Signing Credentials
         run: |
           if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
-            mkdir -p keystores
-            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > keystores/release.p12
-            
-            # Write to both sign.properties and manager/gradle.properties
-            cat <<EOF > manager/sign.properties
-          KEYSTORE_FILE=../keystores/release.p12
-          KEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS=${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}
-          EOF
+            mkdir -p "$GITHUB_WORKSPACE/keystores"
+            mkdir -p "$GITHUB_WORKSPACE/manager/keystores"
+            mkdir -p "$GITHUB_WORKSPACE/manager/app/keystores"
+            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > "$GITHUB_WORKSPACE/keystores/release.p12"
+            cp "$GITHUB_WORKSPACE/keystores/release.p12" "$GITHUB_WORKSPACE/manager/keystores/release.p12"
+            cp "$GITHUB_WORKSPACE/keystores/release.p12" "$GITHUB_WORKSPACE/manager/app/keystores/release.p12"
+            cp "$GITHUB_WORKSPACE/keystores/release.p12" "$GITHUB_WORKSPACE/manager/release.p12"
+            cp "$GITHUB_WORKSPACE/keystores/release.p12" "$GITHUB_WORKSPACE/manager/app/release.p12"
+
+            KEYSTORE_PATH="$GITHUB_WORKSPACE/keystores/release.p12"
 
             cat <<EOF >> manager/gradle.properties
-          KEYSTORE_FILE=../keystores/release.p12
-          KEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS=${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}
-          EOF
+KEYSTORE_FILE=$KEYSTORE_PATH
+KEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}
+KEY_ALIAS=${{ secrets.KEY_ALIAS }}
+KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}
+EOF
+            cat <<EOF > manager/sign.properties
+KEYSTORE_FILE=$KEYSTORE_PATH
+KEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}
+KEY_ALIAS=${{ secrets.KEY_ALIAS }}
+KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}
+EOF
             echo "Configured production release keystore for Manager"
           fi
 
       - name: Build Native Zygisk Subsystem
         run: |
+          NDK_PATH="${{ steps.setup-ndk.outputs.ndk-path }}"
           mkdir -p userspace/zygisk/build
           cmake -B userspace/zygisk/build \
                 -S userspace/zygisk \
-                -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
+                -DCMAKE_TOOLCHAIN_FILE="$NDK_PATH/build/cmake/android.toolchain.cmake" \
                 -DANDROID_ABI=arm64-v8a \
                 -DANDROID_PLATFORM=android-28
           cmake --build userspace/zygisk/build -j$(nproc)
-          
+
           mkdir -p manager/app/src/main/jniLibs/arm64-v8a/
           cp userspace/zygisk/build/libzygisk.so manager/app/src/main/jniLibs/arm64-v8a/
 
+      - name: Assemble LKM bootstrap
+        run: |
+          LLVM_BIN="${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          $LLVM_BIN/clang --target=aarch64-linux-gnu -c -nostdlib \
+            -o userspace/ksud/.lkm_image_bootstrap.o \
+            userspace/ksud/src/lkm_image_bootstrap.S
+
       - name: Build Userspace Daemon (ksud)
         run: |
-          export BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android="--sysroot=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot -I$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android -I$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include"
-          cross build --target aarch64-linux-android --release --manifest-path ./userspace/ksud/Cargo.toml
-          
+          NDK_PATH="${{ steps.setup-ndk.outputs.ndk-path }}"
+          LLVM_BIN="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/bin"
+
+          export CC_aarch64_linux_android="$LLVM_BIN/aarch64-linux-android26-clang"
+          export CXX_aarch64_linux_android="$LLVM_BIN/aarch64-linux-android26-clang++"
+          export AR_aarch64_linux_android="$LLVM_BIN/llvm-ar"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$LLVM_BIN/aarch64-linux-android26-clang"
+
+          export BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android="--sysroot=$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot -I$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android -I$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include"
+
+          RESOURCE_DIR="$($CC_aarch64_linux_android --print-resource-dir)"
+          export RUSTFLAGS="-C link-arg=-Wl,-z,max-page-size=16384 -C link-arg=-Wno-unused-command-line-argument -C link-arg=-L$RESOURCE_DIR/lib/linux/aarch64 -C link-arg=-L$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/26 -C link-arg=-L$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android"
+
+          cargo build --target aarch64-linux-android --release --manifest-path ./userspace/ksud/Cargo.toml
+
           mkdir -p manager/app/src/main/jniLibs/arm64-v8a/
           cp userspace/ksud/target/aarch64-linux-android/release/ksud manager/app/src/main/jniLibs/arm64-v8a/libksud.so
 
@@ -100,20 +125,36 @@ jobs:
         working-directory: ./manager
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease
+          KEYSTORE_PATH="$GITHUB_WORKSPACE/keystores/release.p12"
+          if [ -f "$KEYSTORE_PATH" ]; then
+            ./gradlew assembleRelease \
+              "-PKEYSTORE_FILE=$KEYSTORE_PATH" \
+              "-PKEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}" \
+              "-PKEY_ALIAS=${{ secrets.KEY_ALIAS }}" \
+              "-PKEY_PASSWORD=${{ secrets.KEY_PASSWORD }}"
+          else
+            ./gradlew assembleRelease
+          fi
 
       - name: Package Output Artifacts
         run: |
           mkdir -p dist
-          find manager/app/build/outputs/apk/release/ -name "*.apk" -exec cp {} dist/KernelSu-mix-Manager.apk \;
+          APK_FILE=$(find manager/app/build/outputs/apk/release/ -type f -name "*release*.apk" ! -name "*unsigned*" | head -n 1)
+          if [ -z "$APK_FILE" ]; then
+            APK_FILE=$(find manager/app/build/outputs/apk/release/ -type f -name "*.apk" | head -n 1)
+          fi
+          echo "Packaging Manager APK: $APK_FILE"
+          cp "$APK_FILE" dist/KernelSu-mix-Manager.apk
+          find manager/app/build/outputs/apk/release/ -type f -name "*.apk" -exec cp {} dist/ \;
           cp userspace/ksud/target/aarch64-linux-android/release/ksud dist/ksud-arm64
           cp userspace/zygisk/build/libzygisk.so dist/libzygisk-arm64.so
           cp userspace/zygisk/build/zygisk_injector dist/zygisk_injector-arm64
+          ls -la dist/
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: KernelSu-mix-Build-${{ github.sha }}
+          name: KernelSu-mix-Manager-Suite
           path: dist/*
 
       - name: Create GitHub Release
@@ -124,7 +165,7 @@ jobs:
           name: KernelSu-mix ${{ github.event.inputs.release_tag }}
           body: |
             ### KernelSu-mix Release ${{ github.event.inputs.release_tag }}
-            
+
             **Included Features:**
             - Inbuilt Zygisk Runtime (API v4)
             - SUSFS Kernel Cloaking
@@ -132,11 +173,12 @@ jobs:
             - Tricky Store & Strong Integrity Keybox Support
             - TEE Emulator (Broken TEE Bypass)
             - Play Store Detach Engine
-            
+
             **Downloads:**
             - `KernelSu-mix-Manager.apk` - Management app
             - `ksud-arm64` - Userspace root daemon
             - `libzygisk-arm64.so` - Inbuilt Zygisk runtime
+            - `zygisk_injector-arm64` - Standalone injector
           files: dist/*
           draft: false
           prerelease: false
