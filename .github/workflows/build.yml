@@ -48,14 +48,25 @@ jobs:
           targets: aarch64-linux-android,x86_64-linux-android,armv7-linux-androideabi
 
       - name: Install Cross Compiler Tool
-        run: cargo install cross --git https://github.com/cross-rs/cross
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross
 
       - name: Configure Signing Credentials
         run: |
           if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
-            mkdir -p keystores manager
+            mkdir -p keystores
             echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > keystores/release.p12
+            
+            # Write to both sign.properties and manager/gradle.properties
             cat <<EOF > manager/sign.properties
+          KEYSTORE_FILE=../keystores/release.p12
+          KEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS=${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}
+          EOF
+
+            cat <<EOF >> manager/gradle.properties
           KEYSTORE_FILE=../keystores/release.p12
           KEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS=${{ secrets.KEY_ALIAS }}
@@ -88,8 +99,7 @@ jobs:
       - name: Build KernelSu-mix Manager APK
         working-directory: ./manager
         run: |
-          chmod +x gradlew setup.sh
-          ./setup.sh
+          chmod +x gradlew
           ./gradlew assembleRelease
 
       - name: Package Output Artifacts
