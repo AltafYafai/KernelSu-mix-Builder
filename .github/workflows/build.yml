@@ -1,6 +1,6 @@
 name: Build & Release KernelSu-mix
 
-on:
+"on":
   workflow_dispatch:
     inputs:
       ref:
@@ -65,18 +65,20 @@ jobs:
 
             KEYSTORE_PATH="$GITHUB_WORKSPACE/keystores/release.p12"
 
-            cat <<EOF >> manager/gradle.properties
-KEYSTORE_FILE=$KEYSTORE_PATH
-KEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}
-KEY_ALIAS=${{ secrets.KEY_ALIAS }}
-KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}
-EOF
-            cat <<EOF > manager/sign.properties
-KEYSTORE_FILE=$KEYSTORE_PATH
-KEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}
-KEY_ALIAS=${{ secrets.KEY_ALIAS }}
-KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}
-EOF
+            {
+              echo "KEYSTORE_FILE=$KEYSTORE_PATH"
+              echo "KEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}"
+              echo "KEY_ALIAS=${{ secrets.KEY_ALIAS }}"
+              echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}"
+            } >> manager/gradle.properties
+
+            {
+              echo "KEYSTORE_FILE=$KEYSTORE_PATH"
+              echo "KEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}"
+              echo "KEY_ALIAS=${{ secrets.KEY_ALIAS }}"
+              echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}"
+            } > manager/sign.properties
+
             echo "Configured production release keystore for Manager"
           fi
 
