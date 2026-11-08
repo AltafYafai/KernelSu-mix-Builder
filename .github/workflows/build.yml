@@ -108,6 +108,7 @@ jobs:
           find manager/app/build/outputs/apk/release/ -name "*.apk" -exec cp {} dist/KernelSu-mix-Manager.apk \;
           cp userspace/ksud/target/aarch64-linux-android/release/ksud dist/ksud-arm64
           cp userspace/zygisk/build/libzygisk.so dist/libzygisk-arm64.so
+          cp userspace/zygisk/build/zygisk_injector dist/zygisk_injector-arm64
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
