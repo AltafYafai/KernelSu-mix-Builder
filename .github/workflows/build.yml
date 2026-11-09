@@ -283,3 +283,13 @@ jobs:
           files: dist/*
           draft: false
           prerelease: false
+
+      - name: Send Telegram Notification and Upload APK
+        if: ${{ github.event.inputs.create_release != 'false' }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN || secrets.BOT_TOKEN || secrets.TG_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID || secrets.CHAT_ID || secrets.TG_CHAT_ID }}
+          TAG_NAME: ${{ github.event.inputs.release_tag != '' && github.event.inputs.release_tag || format('v1.0.{0}', github.run_number) }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          python3 scripts/telegram_notify.py
