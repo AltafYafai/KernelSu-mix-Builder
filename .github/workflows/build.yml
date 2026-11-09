@@ -228,6 +228,15 @@ jobs:
           mkdir -p manager/app/src/main/jniLibs/arm64-v8a/
           cp userspace/ksud/target/aarch64-linux-android/release/ksud manager/app/src/main/jniLibs/arm64-v8a/libksud.so
 
+      - name: Ensure Bundled Root Modules
+        run: |
+          mkdir -p manager/app/src/main/assets/modules
+          [ -s manager/app/src/main/assets/modules/zygisksu.zip ] || curl -sL -o manager/app/src/main/assets/modules/zygisksu.zip "https://github.com/Dr-TSNG/ZygiskNext/releases/download/v1.5.3/Zygisk-Next-1.5.3-880-22a1bf5-release.zip"
+          [ -s manager/app/src/main/assets/modules/tricky_store.zip ] || curl -sL -o manager/app/src/main/assets/modules/tricky_store.zip "https://github.com/5ec1cff/TrickyStore/releases/download/1.4.1/Tricky-Store-v1.4.1-245-72b2e84-release.zip"
+          [ -s manager/app/src/main/assets/modules/playintegrityfix.zip ] || curl -sL -o manager/app/src/main/assets/modules/playintegrityfix.zip "https://github.com/KOWX712/PlayIntegrityFix/releases/download/v4.9-inject-s/PlayIntegrityFix_v4.9-inject-s.zip"
+          [ -s manager/app/src/main/assets/modules/zygisk_detach.zip ] || curl -sL -o manager/app/src/main/assets/modules/zygisk_detach.zip "https://github.com/j-hc/zygisk-detach/releases/download/v1.24.0/zygisk-detach-v1.24.0.zip"
+          ls -lh manager/app/src/main/assets/modules/
+
       - name: Build KernelSu-mix Manager APK
         working-directory: ./manager
         run: |

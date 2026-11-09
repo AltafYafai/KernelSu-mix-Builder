@@ -7,6 +7,20 @@ and this project adheres to Semantic Versioning.
 
 ---
 
+## [v1.0.7] - 2026-11-09
+
+### Added
+- **Full Modular Parity Suite**: Bundled the 4 official, battle-tested upstream root modules directly into the Manager APK (`assets/modules/`):
+  - **Zygisk Next v1.5.3** (`zygisksu`)
+  - **Tricky Store v1.4.1** (`tricky_store`)
+  - **Play Integrity Fix v4.9-inject-s** (`playintegrityfix`)
+  - **Zygisk Detach v1.24.0** (`zygisk-detach`)
+- **1-Click Inbuilt Suite Setup**: Added a unified one-click installation and management workflow in "Mix Features" that installs all 4 modules into `/data/adb/modules/` via standard KernelSU module packaging, provisions verified 6-certificate hardware keybox, and auto-configures GMS target mode (`!`).
+- **Seamless 3rd-Party Module Compatibility**: Third-party modules (such as **HMA-OSS**, **Shamiko**, and **LSPosed**) now detect the active Zygisk framework (`zygisksu`) identically to standalone module setups.
+- **Genuine Strong Integrity & Keystore Interception**: Utilizes Tricky Store's real BouncyCastle keystore2 binder interceptor to dynamically sign attestation certificate chains for Google Play Services.
+
+---
+
 ## [v1.0.6] - 2026-11-09
 
 ### Fixed
