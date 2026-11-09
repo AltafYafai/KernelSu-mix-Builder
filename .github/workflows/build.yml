@@ -1,6 +1,8 @@
 name: Build & Release KernelSu-mix
 
 "on":
+  schedule:
+    - cron: '0 0 * * *'
   workflow_dispatch:
     inputs:
       ref:
@@ -115,33 +117,45 @@ jobs:
           cp userspace/ksuinit/target/aarch64-linux-android/release/ksuinit userspace/ksud/bin/aarch64/ksuinit
           chmod +x userspace/ksud/bin/aarch64/ksuinit
 
-      - name: Download GKI LKMs and SUSFS Guard Modules
+      - name: Check and Sync Upstream KernelSU-Next
+        env:
+          GH_TOKEN: ${{ secrets.ACCESS_TOKEN }}
         run: |
+          git config --global user.name "Altaf Yafai"
+          git config --global user.email "altaf.alu@gmail.com"
+          git remote add upstream https://github.com/KernelSU-Next/KernelSU-Next.git || true
+          git fetch upstream dev
+          AHEAD=$(git rev-list --count HEAD..upstream/dev)
+          echo "Upstream commits ahead: $AHEAD"
+          if [ "$AHEAD" -gt 0 ]; then
+            echo "New upstream commits detected! Merging..."
+            git merge upstream/dev -m "Auto-merge upstream KernelSU-Next dev"
+            git push origin master
+          else
+            echo "Already up to date with upstream KernelSU-Next dev."
+          fi
+
+      - name: Download Latest GKI LKMs and SUSFS Guard Modules
+        env:
+          GH_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+        run: |
+          RUN_ID=$(gh run list -R KernelSU-Next/KernelSU-Next -b dev --status success --limit 1 --json databaseId --jq '.[0].databaseId')
+          echo "Latest KernelSU-Next dev CI run ID: $RUN_ID"
+          
+          mkdir -p /tmp/dev_lkms
+          gh run download "$RUN_ID" -R KernelSU-Next/KernelSU-Next -p "aarch64-*-lkm" -D /tmp/dev_lkms
+          
+          dest="userspace/ksud/bin/aarch64"
+          mkdir -p "$dest"
           python3 -c "
-          import urllib.request, json, os
-
-          url = 'https://api.github.com/repos/KernelSU-Next/KernelSU-Next/releases/tags/v3.4.2'
-          req = urllib.request.Request(url, headers={'User-Agent': 'KernelSu-mix-Builder'})
-          with urllib.request.urlopen(req) as resp:
-              data = json.loads(resp.read().decode())
-
-          dest = 'userspace/ksud/bin/aarch64'
+          import os, shutil
+          dest = '$dest'
           os.makedirs(dest, exist_ok=True)
-
-          for asset in data.get('assets', []):
-              name = asset['name']
-              download_url = asset['browser_download_url']
-              if name.startswith('aarch64_') and name.endswith('_kernelsu.ko'):
-                  target_name = name[len('aarch64_'):]
-                  dest_path = os.path.join(dest, target_name)
-                  print(f'Downloading {name} -> {target_name}...')
-                  urllib.request.urlretrieve(download_url, dest_path)
-              elif name.endswith('_susfs_guard_lkm.ko'):
-                  dest_path = os.path.join(dest, name)
-                  print(f'Downloading {name}...')
-                  urllib.request.urlretrieve(download_url, dest_path)
-
-          print('Prepared assets:', sorted(os.listdir(dest)))
+          for root, dirs, files in os.walk('/tmp/dev_lkms'):
+              for f in files:
+                  if f.endswith('.ko'):
+                      shutil.copy2(os.path.join(root, f), os.path.join(dest, f))
+          print('Prepared latest dev assets:', sorted(os.listdir(dest)))
           "
 
       - name: Patch GKI LKMs for Manager Recognition
