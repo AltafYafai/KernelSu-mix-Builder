@@ -7,6 +7,19 @@ and this project adheres to Semantic Versioning.
 
 ---
 
+## [v1.0.6] - 2026-11-09
+
+### Fixed
+- **Keybox Auto-Fetch Resilience**: Bundled a verified, authentic 6-certificate hardware keybox (`assets/keybox.xml`) directly into the Manager APK. The "Auto-Fetch Keybox" button now reliably installs valid certificates even when upstream raw URLs are blocked or moved.
+- **Accurate Keybox State Detection**: Prevented empty or corrupted 0-certificate files from falsely displaying *"Hardware Keybox: Installed (Strong Integrity)"*. Only valid keyboxes with parsed certificates (> 0) report as active.
+- **T.A.K.R. WebView Download Interceptor**: Overhauled the in-app Keybox Repository WebView (`https://keybox.kowx712.cc/en`) with `window.open` trapping, `setDownloadListener`, `shouldOverrideUrlLoading`, and cookie inheritance, allowing keyboxes like TAKR 36 to be downloaded and installed directly in-app after human verification.
+- **Automated GMS Target Configuration**: Importing or fetching a keybox now automatically adds or upgrades `com.google.android.gms!` and `com.google.android.gms.unstable!` to Keybox Generate mode (`!`) in `target.txt` and terminates GMS attestation processes to force immediate certificate re-issuance.
+
+### Added
+- **Telegram Bot Integration**: Added automated Telegram notifications with formatted HTML changelog and direct `KernelSu-mix-Manager.apk` document upload to configured channels/chats on every GitHub release.
+
+---
+
 ## [v1.0.5] - 2026-11-09
 
 ### Fixed
