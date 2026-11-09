@@ -20,6 +20,8 @@ jobs:
   build:
     name: Build KernelSu-mix Suite
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout Private Source Repository
@@ -248,6 +250,7 @@ jobs:
         if: ${{ github.event.inputs.create_release != 'false' }}
         uses: softprops/action-gh-release@v2
         with:
+          token: ${{ secrets.ACCESS_TOKEN }}
           tag_name: ${{ github.event.inputs.release_tag != '' && github.event.inputs.release_tag || format('v1.0.{0}', github.run_number) }}
           name: KernelSu-mix ${{ github.event.inputs.release_tag != '' && github.event.inputs.release_tag || format('v1.0.{0}', github.run_number) }}
           body: |
