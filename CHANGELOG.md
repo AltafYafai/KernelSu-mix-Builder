@@ -7,6 +7,17 @@ and this project adheres to Semantic Versioning.
 
 ---
 
+## [v1.0.5] - 2026-11-09
+
+### Fixed
+- **Manager UAPI v6 Alignment**: Fixed `get_manager_uapi_version()` in `ksu.cc` returning `KERNEL_SU_UAPI_VERSION` (`6`) instead of `5`, eliminating the red *"The current KernelSu-mix manager version 5 is too low for KernelSu-mix to work properly. Please upgrade manager to version 6 or higher!"* warning banner.
+- **Manager and LKM Full Harmony**: Manager version string now reflects `v3.4.2 (33497-6)`, matching the kernel module UAPI v6 protocol perfectly.
+
+### Added
+- **Automated Specific Release Changelogs**: Integrated CI release notes generator that automatically extracts release-specific changelogs and computes SHA-256 checksums tables for all release artifacts.
+
+---
+
 ## [v1.0.4] - 2026-11-09
 
 ### Fixed
