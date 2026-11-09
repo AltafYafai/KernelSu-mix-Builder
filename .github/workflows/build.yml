@@ -10,9 +10,9 @@ name: Build & Release KernelSu-mix
       create_release:
         description: 'Publish as GitHub Release'
         type: boolean
-        default: false
+        default: true
       release_tag:
-        description: 'Release tag (e.g. v1.0.0, required if publishing release)'
+        description: 'Release tag (optional; auto-generated if blank)'
         required: false
         default: ''
 
@@ -245,11 +245,11 @@ jobs:
           path: dist/*
 
       - name: Create GitHub Release
-        if: ${{ github.event.inputs.create_release == 'true' && github.event.inputs.release_tag != '' }}
+        if: ${{ github.event.inputs.create_release != 'false' }}
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.release_tag }}
-          name: KernelSu-mix ${{ github.event.inputs.release_tag }}
+          tag_name: ${{ github.event.inputs.release_tag != '' && github.event.inputs.release_tag || format('v1.0.{0}', github.run_number) }}
+          name: KernelSu-mix ${{ github.event.inputs.release_tag != '' && github.event.inputs.release_tag || format('v1.0.{0}', github.run_number) }}
           body: |
             ### KernelSu-mix Release ${{ github.event.inputs.release_tag }}
 
