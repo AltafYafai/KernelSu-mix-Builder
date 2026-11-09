@@ -96,6 +96,154 @@ jobs:
           mkdir -p manager/app/src/main/jniLibs/arm64-v8a/
           cp userspace/zygisk/build/libzygisk.so manager/app/src/main/jniLibs/arm64-v8a/
 
+      - name: Build ksuinit
+        run: |
+          NDK_PATH="${{ steps.setup-ndk.outputs.ndk-path }}"
+          LLVM_BIN="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          export CLANG_PATH="$LLVM_BIN/aarch64-linux-android26-clang"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$CLANG_PATH"
+          BUILTINS="$($CLANG_PATH --print-resource-dir)/lib/linux/libclang_rt.builtins-aarch64-android.a"
+          export RUSTFLAGS="-C target-feature=+crt-static -C link-arg=-Wl,-z,max-page-size=16384 -C link-arg=-Wno-unused-command-line-argument -C link-arg=$BUILTINS"
+
+          cd userspace/ksuinit
+          cargo build --target aarch64-linux-android --release
+          cd ../..
+
+          mkdir -p userspace/ksud/bin/aarch64
+          cp userspace/ksuinit/target/aarch64-linux-android/release/ksuinit userspace/ksud/bin/aarch64/ksuinit
+          chmod +x userspace/ksud/bin/aarch64/ksuinit
+
+      - name: Download GKI LKMs and SUSFS Guard Modules
+        run: |
+          python3 -c "
+          import urllib.request, json, os
+
+          url = 'https://api.github.com/repos/KernelSU-Next/KernelSU-Next/releases/tags/v3.4.2'
+          req = urllib.request.Request(url, headers={'User-Agent': 'KernelSu-mix-Builder'})
+          with urllib.request.urlopen(req) as resp:
+              data = json.loads(resp.read().decode())
+
+          dest = 'userspace/ksud/bin/aarch64'
+          os.makedirs(dest, exist_ok=True)
+
+          for asset in data.get('assets', []):
+              name = asset['name']
+              download_url = asset['browser_download_url']
+              if name.startswith('aarch64_') and name.endswith('_kernelsu.ko'):
+                  target_name = name[len('aarch64_'):]
+                  dest_path = os.path.join(dest, target_name)
+                  print(f'Downloading {name} -> {target_name}...')
+                  urllib.request.urlretrieve(download_url, dest_path)
+              elif name.endswith('_susfs_guard_lkm.ko'):
+                  dest_path = os.path.join(dest, name)
+                  print(f'Downloading {name}...')
+                  urllib.request.urlretrieve(download_url, dest_path)
+
+          print('Prepared assets:', sorted(os.listdir(dest)))
+          "
+
+      - name: Patch GKI LKMs for Manager Recognition
+        run: |
+          LLVM_BIN="${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin"
+
+          cat << 'EOF' > /tmp/is_manager.s
+          .global _start
+          .text
+          _start:
+          loop:
+              ldrb w1, [x0], #1
+              cbz w1, not_found
+              cmp w1, #0x6b
+              b.ne loop
+              ldrb w1, [x0]
+              cmp w1, #0x73
+              b.ne loop
+              ldrb w1, [x0, #1]
+              cmp w1, #0x75
+              b.ne loop
+              ldrb w1, [x0, #2]
+              cmp w1, #0x6e
+              b.ne loop
+              ldrb w1, [x0, #3]
+              cmp w1, #0x65
+              b.ne loop
+              ldrb w1, [x0, #4]
+              cmp w1, #0x78
+              b.ne loop
+              ldrb w1, [x0, #5]
+              cmp w1, #0x74
+              b.ne loop
+              mov w0, #1
+              ret
+          not_found:
+              mov w0, #0
+              ret
+          EOF
+
+          $LLVM_BIN/clang --target=aarch64-linux-gnu -c -nostdlib /tmp/is_manager.s -o /tmp/is_manager.o
+          $LLVM_BIN/llvm-objcopy -O binary /tmp/is_manager.o /tmp/is_manager.bin
+
+          python3 -c "
+          import glob, struct, os
+
+          with open('/tmp/is_manager.bin', 'rb') as f:
+              patch_bytes = f.read()
+          print(f'Patch payload size: {len(patch_bytes)} bytes')
+
+          def find_symbol(elf_data, sym_target):
+              e_shoff = struct.unpack('<Q', elf_data[40:48])[0]
+              e_shentsize = struct.unpack('<H', elf_data[58:60])[0]
+              e_shnum = struct.unpack('<H', elf_data[60:62])[0]
+              e_shstrndx = struct.unpack('<H', elf_data[62:64])[0]
+
+              sections = []
+              for i in range(e_shnum):
+                  off = e_shoff + i * e_shentsize
+                  sh_name, sh_type, sh_flags, sh_addr, sh_offset, sh_size, sh_link, sh_info, sh_addralign, sh_entsize = struct.unpack('<IIQQQQIIQQ', elf_data[off:off+64])
+                  sections.append({
+                      'name_idx': sh_name, 'type': sh_type, 'flags': sh_flags, 'addr': sh_addr,
+                      'offset': sh_offset, 'size': sh_size, 'link': sh_link, 'info': sh_info,
+                      'entsize': sh_entsize
+                  })
+
+              shstr = elf_data[sections[e_shstrndx]['offset']:sections[e_shstrndx]['offset'] + sections[e_shstrndx]['size']]
+              for s in sections:
+                  end = shstr.find(b'\0', s['name_idx'])
+                  s['name'] = shstr[s['name_idx']:end].decode('utf-8', errors='ignore')
+
+              symtabs = [s for s in sections if s['type'] == 2]
+              if not symtabs:
+                  return None
+              symtab = symtabs[0]
+              strtab = sections[symtab['link']]
+              strdata = elf_data[strtab['offset']:strtab['offset']+strtab['size']]
+
+              num_syms = symtab['size'] // symtab['entsize']
+              for i in range(num_syms):
+                  off = symtab['offset'] + i * symtab['entsize']
+                  st_name, st_info, st_other, st_shndx, st_value, st_size = struct.unpack('<IBBHQQ', elf_data[off:off+24])
+                  sym_name = strdata[st_name:strdata.find(b'\0', st_name)].decode('utf-8', errors='ignore')
+                  if sym_name == sym_target:
+                      sec = sections[st_shndx]
+                      file_offset = sec['offset'] + st_value
+                      return file_offset, st_size
+              return None
+
+          for path in sorted(glob.glob('userspace/ksud/bin/aarch64/*_kernelsu.ko')):
+              with open(path, 'rb') as f:
+                  data = bytearray(f.read())
+              sym_info = find_symbol(data, 'is_manager_apk')
+              if sym_info:
+                  off, size = sym_info
+                  assert len(patch_bytes) <= size, f'Patch exceeds symbol size {size}'
+                  data[off:off+len(patch_bytes)] = patch_bytes
+                  with open(path, 'wb') as f:
+                      f.write(data)
+                  print(f'Successfully patched {os.path.basename(path)} at 0x{off:x}')
+              else:
+                  print(f'WARNING: is_manager_apk not found in {os.path.basename(path)}')
+          "
+
       - name: Assemble LKM bootstrap
         run: |
           LLVM_BIN="${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin"
