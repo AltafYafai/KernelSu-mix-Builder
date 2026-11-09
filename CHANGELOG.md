@@ -10,6 +10,7 @@ and this project adheres to Semantic Versioning.
 ## [v1.0.6] - 2026-11-09
 
 ### Fixed
+- **Zygisk Framework Detection for Module Installers**: Fixed Zygisk module flashing failure (such as HMA-OSS aborting with *"No known Zygisk frameworks (e.g. ZygiskNext) is found"*). Exported `ZYGISK_ENABLED=1` in the module installation environment and automatically provisioned framework metadata and daemon markers in `/data/adb/modules/zygisk_mix` when inbuilt Zygisk is enabled.
 - **Keybox Auto-Fetch Resilience**: Bundled a verified, authentic 6-certificate hardware keybox (`assets/keybox.xml`) directly into the Manager APK. The "Auto-Fetch Keybox" button now reliably installs valid certificates even when upstream raw URLs are blocked or moved.
 - **Accurate Keybox State Detection**: Prevented empty or corrupted 0-certificate files from falsely displaying *"Hardware Keybox: Installed (Strong Integrity)"*. Only valid keyboxes with parsed certificates (> 0) report as active.
 - **T.A.K.R. WebView Download Interceptor**: Overhauled the in-app Keybox Repository WebView (`https://keybox.kowx712.cc/en`) with `window.open` trapping, `setDownloadListener`, `shouldOverrideUrlLoading`, and cookie inheritance, allowing keyboxes like TAKR 36 to be downloaded and installed directly in-app after human verification.
